@@ -2,12 +2,16 @@ package com.example.weather;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.annotation.SuppressLint;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,8 +24,13 @@ import com.qweather.sdk.view.HeConfig;
 import com.qweather.sdk.view.QWeather;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -34,8 +43,11 @@ public class MainActivity extends AppCompatActivity {
     TextView t3;
     TextView t4;
     TextView t5;
+    ListView list;
+    Cursor adc;
     private DB helper;
     private SQLiteDatabase db;
+    MyAdapter ma;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,6 +61,7 @@ public class MainActivity extends AppCompatActivity {
         t1=(TextView) findViewById(R.id.degree);
         t2=(TextView) findViewById(R.id.wet);
         t3=(TextView) findViewById(R.id.pm25);
+        list=findViewById(R.id.starList);
         //
         helper = new DB(this);
         db=helper.getReadableDatabase();
@@ -57,6 +70,30 @@ public class MainActivity extends AppCompatActivity {
         HeConfig.switchToDevService();
         //读入城市csv
         //city();
+        list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+                adc.moveToPosition(i);
+                String cityId = adc.getString(1);
+                id.setText(cityId);
+                click(t1);
+            }
+        });
+    }
+
+    public void clickCity(View v){
+        Log.d("","执行了吗");
+        Intent intent = new Intent(MainActivity.this, CityList.class);
+        startActivityForResult(intent,1);
+    }
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode == 1){
+            String backId = data.getStringExtra("backId");
+            id.setText(backId);
+            click(t1);
+        }
     }
 
     public void click(View v){
@@ -90,7 +127,6 @@ public class MainActivity extends AppCompatActivity {
                 String province=cursor.getString(2)+"-"+cursor.getString(1);
                 locate.setText(province);
         }
-
         QWeather.getWeatherNow(MainActivity.this, "CN"+nowId, Lang.ZH_HANS, Unit.METRIC, new QWeather.OnResultWeatherNowListener() {
             @Override
             public void onError(Throwable e) {
@@ -108,6 +144,7 @@ public class MainActivity extends AppCompatActivity {
                     String[] day=date();
                     t4.setText(day[0]);
                     t5.setText(day[1]);
+                    save();
                 } else {
                     //在此查看返回数据失败的原因
                     Code code = weatherBean.getCode();
@@ -115,7 +152,8 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
-        save();
+
+
     }
 
     public void city(){
@@ -132,8 +170,8 @@ public class MainActivity extends AppCompatActivity {
                 //Log.d("city",temp[7]);
                 ContentValues cValue = new ContentValues();
                 cValue.put("id",temp[0]);
-                cValue.put("province",temp[2]);
-                cValue.put("city",temp[7]);
+                cValue.put("province",temp[7]);
+                cValue.put("city",temp[2]);
                 db.insert("city",null,cValue);
             }
         } catch (IOException e) {
@@ -157,14 +195,15 @@ public class MainActivity extends AppCompatActivity {
         cValue.put("degree",t1.getText().toString());
         cValue.put("wet",t2.getText().toString());
         cValue.put("pm",t3.getText().toString());
+        Log.d("检查保存",t3.getText().toString());
 
         Cursor c=db.query("log", new String[]{"id"}, "id=?", new String[]{nowId}, null, null, null);
         if(c.moveToFirst()){
-            db.update("log",cValue,"id="+nowId,null);
-            Log.d("数据库操作：","已存在");
+            db.update("log",cValue,"id=?",new String[]{nowId});
+            Log.d("数据库操作","已存在");
         }else{
             db.insert("log",null,cValue);
-            Log.d("数据库操作：","未存在");
+            Log.d("数据库操作","未存在");
         }
     }
 
@@ -180,4 +219,41 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(getApplicationContext(), "无对应代码城市", Toast.LENGTH_SHORT).show();
         return false;
     }
+
+    public void starCity(View v){
+        String nowId=id.getText().toString();
+        Cursor cursor = db.query("star", null, "target=?", new String[]{nowId}, null, null, null);
+        //有了就删除
+        if(cursor.moveToNext()){
+            Log.d("","删除");
+            db.delete("star","target=?",new String[]{nowId});
+            starAd();
+            return;
+        }
+        Log.d("","添加");
+        //没有就添加
+        cursor = db.query("city", null, "id=?", new String[]{nowId}, null, null, null);
+        if(!cursor.moveToNext()){return;}
+        ContentValues c=new ContentValues();
+        c.put("target",nowId);
+        c.put("name",cursor.getString(2));
+        db.insert("star",null,c);
+        starAd();
+    }
+    public void starAd(){
+        adc = db.query("star",new String[]{"name","target"}, null, null, null, null, null);
+        if(!adc.moveToNext()){
+            Log.d("","关注列表为空");
+            return;
+        }
+        ma = new MyAdapter(this, adc);
+        list.setAdapter(ma);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        starAd();
+    }
+
 }

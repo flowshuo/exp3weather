@@ -17,6 +17,8 @@ public class DB extends SQLiteOpenHelper {
         db.execSQL(sql);
         sql = "create table log(id text primary key,day text,time text,degree text,wet text,pm text)";
         db.execSQL(sql);
+        sql = "create table star(id integer primary key,target text,name text)";
+        db.execSQL(sql);
     }
 
     @Override
